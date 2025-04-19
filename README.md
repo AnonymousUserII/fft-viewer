@@ -5,6 +5,7 @@ It is currently hard-coded to take in 16-bit mono WAV files.
 
 ## Building
 > It requires the SDL2 library...
+
 If you don't have cmake installed, you'll have a lot of fun trying to make that work.
 
 ```sh
@@ -12,6 +13,7 @@ git clone https://github.com/libsdl-org/SDL.git --depth=1 --branch SDL2 vendored
 cmake -S . -B build
 cmake --build build
 ```
+The executable will be at `build/fft`.
 
 ## Using
 This application will either take the input from your computer's default microphone
