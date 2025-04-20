@@ -24,11 +24,11 @@ To use the microphone, pass in no arguments, i.e.
 ./fft
 ```
 
-To use in file player mode, give in the path to the file,
+To use in file player mode, pass in the path to the file,
 ```sh
 ./fft [file_path.wav]
 ```
-When in file player mode, you can drop in other WAVs to play them instead.
+When in file player mode, you can drop other WAVs onto the window to switch to them.
 
 ### Note
 For some reason, the playback sample rate does not change when dragging in files.

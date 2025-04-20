@@ -8,6 +8,14 @@ Uint32 min(Uint32 a, Uint32 b) {
     return a < b ? a : b;
 }
 
+double maxd(double a, double b) {
+    return a > b ? a : b;
+}
+
+double mind(double a, double b) {
+    return a < b ? a : b;
+}
+
 double temperDouble(double z) {
     return z > UINT16_MAX ? 0 : z;
 }

@@ -20,13 +20,6 @@ double complex fftIn[SAMPLING] = {0};
 double complex fftOut[SAMPLING] = {0};
 double complex lastFftOut[SAMPLING] = {0};
 
-// Window constants
-const Uint16 LENGTH = 1500;
-const Uint16 HEIGHT = 1000;
-const SDL_Color BG = {0, 0, 0};
-const SDL_Color BAR = {128, 128, 128};
-const SDL_Color BEAM = {128, 64, 64};
-
 struct AudioData {
     Uint32 length;
     Uint8 *pos;
@@ -149,7 +142,7 @@ int main(int argc, char *argv[]) {
         const Uint32 frameStart = SDL_GetTicks();
         SDL_SetRenderDrawColor(renderer, BG.r, BG.g, BG.b, BG.a);
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, BAR.r, BAR.g, BAR.g, BAR.a);
+        SDL_SetRenderDrawColor(renderer, WAVE.r, WAVE.g, WAVE.g, WAVE.a);
 
         if (doMusic) {
             if (audio.length == 0 || wavLength < audio.length) {
@@ -169,23 +162,26 @@ int main(int argc, char *argv[]) {
             // Keep the pre-windowed waveform for displaying
             originalIn[sample] = fftIn[sample];
 
+            // Reduce each looped buffer
+            fftIn[sample] = reduction(fftIn[sample], sample % AUDIO_BUF, AUDIO_BUF);
+
             // Perform reduction on whole sample
-            fftIn[sample] = reduction(fftIn[sample], sample, SAMPLING);
+            //fftIn[sample] = reduction(fftIn[sample], sample, SAMPLING);
         }
 
-        // Draw input waveform
+#if SHOW_WAVEFORM
         const double horizontalSeparator = (double) LENGTH / SHOWN_SAMPLES;
-        float prevX = 0., prevY = (float) (1 - originalIn[0]) * (HEIGHT / 2);
+        float prevX = 0., prevY = (float) originalIn[0] * WAVEFORM_HEIGHT + HEIGHT / 2;
         for (Uint32 frame = 1; frame < SHOWN_SAMPLES; frame++) {
             float thisX = (float) frame * horizontalSeparator;
-            float thisY = (float) (1 - originalIn[AUDIO_BUF - SHOWN_SAMPLES + frame]) * (HEIGHT / 2);
+            float thisY = (float) originalIn[SAMPLING - SHOWN_SAMPLES + frame] * WAVEFORM_HEIGHT + HEIGHT / 2;
             SDL_RenderDrawLineF(renderer, prevX, prevY, thisX, thisY);
             prevX = thisX;
             prevY = thisY;
         }
+#endif
 
-#if 1
-
+#if SHOW_FFT
         SDL_SetRenderDrawColor(renderer, BEAM.r, BEAM.g, BEAM.b, BEAM.a);
 
         fft(fftIn, fftOut, SAMPLING);
@@ -196,19 +192,6 @@ int main(int argc, char *argv[]) {
         const double oneStep = pow((double) last / base, (double) 1 / FFT_PILLARS); // For logarithmic
         const double xInc = (double) LENGTH / FFT_PILLARS;
         SDL_SetRenderDrawColor(renderer, BEAM.r, BEAM.g, BEAM.b, BEAM.a);
-
-#if SHOW_STATS
-        Uint16 maxFreq = base;
-        double totalSumSqrd = 0;
-        for (Uint16 f = base; f < last; f++) {
-            double mag = temperDouble(cabs(fftOut[f]));
-            totalSumSqrd += mag * mag;
-            maxFreq = (mag > cabs(fftOut[maxFreq])) ? f : maxFreq;
-        }
-        double totalMeanSqrd = totalSumSqrd / (last - base);
-        double blockLinearRms = sqrt(totalMeanSqrd);
-        double blockLogRms = 20 * log10(blockLinearRms);  // dBFS of sample
-#endif
 
         // Attempt a smooth peak decay
         if (DECAY_SMOOTHING) {
@@ -224,27 +207,27 @@ int main(int argc, char *argv[]) {
 
         double workingFreq = base;
         for (double x = 0; x < LENGTH; x += xInc, workingFreq *= oneStep) {
-            Uint16 count = 0;
-            double sum = temperDouble(cabs(fftOut[(Uint16) workingFreq]));
+            if (workingFreq > SAMPLING / 2)
+                continue;
+
+            double maxSample = temperDouble(cabs(fftOut[(Uint16) workingFreq + 1]));
             //Uint16 nextFreq = workingFreq + nextStep;  // Linear
             Uint16 nextFreq = workingFreq * oneStep;  // Logarithmic
-            for (Uint16 tempF = workingFreq + 1; tempF < nextFreq; tempF++) {
-                sum += temperDouble(cabs(fftOut[tempF]));
-                count++;
+            for (Uint16 f = workingFreq + 1; f < nextFreq; f++) {
+                complex double value = fftOut[f];
+                maxSample = maxd(maxSample, temperDouble(cabs(value)));
             }
 
-            double average = count ? sum / (double) count : sum;
-
-            if (average) average = log(average);
+            if (maxSample <= 1) continue;
 
             // Apply blanket eq to reduce bass height, then scale height
-            average = eq(average, workingFreq) * SCALER;
+            maxSample = eq(log(maxSample), workingFreq) * SCALER;
 
             SDL_Rect rect;
             rect.x = x;
-            rect.y = ceil(HEIGHT - average * HEIGHT / 2) - 5;
+            rect.y = ceil(HEIGHT - maxSample * HEIGHT / 2) - 5;
             rect.w = xInc;
-            rect.h = average * HEIGHT / 2;
+            rect.h = maxSample * HEIGHT / 2;
             SDL_RenderFillRect(renderer, &rect);
         }
 
@@ -253,14 +236,26 @@ int main(int argc, char *argv[]) {
             lastFftOut[i] = fftOut[i];
         }
 
-#if SHOW_STATS
-        printf(
-            "Max: %5dHz (%7.5lf)\tRMS: %7.3lf\n",
-            maxFreq, cabs(fftOut[maxFreq]), blockLogRms
-        );
-#endif
+    #if SHOW_STATS
+        if (!isPaused) {
+            Uint16 maxFreq = base;
+            double totalSumSqrd = 0;
+            for (Uint16 f = base; f < min(last, SAMPLING / 2); f++) {
+                double mag = temperDouble(cabs(fftOut[f]));
+                totalSumSqrd += mag * mag;
+                maxFreq = (mag > temperDouble(cabs(fftOut[maxFreq]))) ? f : maxFreq;
+            }
+            double totalMeanSqrd = totalSumSqrd / (last - base);
+            double blockLinearRms = sqrt(totalMeanSqrd);
+            double blockLogRms = 20 * log10(blockLinearRms);  // dBFS of sample
 
-#endif
+            printf(
+                "Max: %5dHz (%7.5lf)\tRMS: %7.3lf\n",
+                maxFreq * wavSpec.freq / SAMPLING, temperDouble(cabs(fftOut[maxFreq])), blockLogRms
+            );
+        }
+    #endif
+#endif // SHOW_FFT
 
         SDL_Event event;
         while (SDL_PollEvent(&event)) {

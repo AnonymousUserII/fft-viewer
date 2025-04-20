@@ -35,6 +35,15 @@ void _fft(double complex *in, double complex *out, int n, int step) {
 void fft(double complex *in_buf, double complex *out_buf, int n) {
     _fft(in_buf, out_buf, n, 1);
 
+#if UNMIRROR_FFT
+    for (uint i = 0; i < n / 2; i++) {
+        out_buf[i] += out_buf[n - 1 - i];
+    }
+    for (uint i = n / 2; i < n; i++) {
+        out_buf[i] = 0;
+    }
+#endif
+
     // Convert out to magnitudes
     // for (uint i = 0; i < n; i++) {
     //     out_buf[i] = cabs(out_buf[i]);
