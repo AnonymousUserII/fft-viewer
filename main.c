@@ -12,13 +12,17 @@ char holdAudioStream = 0;
 char doMusic;
 char stereo = 0;
 
-short audioStreamIn[STREAM_BUF] = {0};
-short audioOldBufferIn[AUDIO_BUF] = {0};
+short audioStreamIn[STREAM_BUF * 2] = {0};
 short audioBufferIn[AUDIO_BUF] = {0};
+short audioBufferInR[AUDIO_BUF] = {0};
 double complex originalIn[SAMPLING] = {0};
+double complex originalInR[SAMPLING] = {0};
 double complex fftIn[SAMPLING] = {0};
+double complex fftInR[SAMPLING] = {0};
 double complex fftOut[SAMPLING] = {0};
+double complex fftOutR[SAMPLING] = {0};
 double complex lastFftOut[SAMPLING] = {0};
+double complex lastFftOutR[SAMPLING] = {0};
 
 struct AudioData {
     Uint32 length;
@@ -57,11 +61,27 @@ void AudioCallback(void *userData, Uint8 *stream, Uint32 streamLength) {
 
     SDL_memcpy(audioStreamIn, stream, length);
     length /= 2;  // No idea why this is needed
-    // Shift audioBufferIn down
-    for (Uint32 i = 0; i < AUDIO_BUF - length; i++) {
-        audioBufferIn[i] = audioBufferIn[i + length];
+    if (!stereo) {
+        Uint32 newStartIndex = AUDIO_BUF - length;
+        for (Uint32 i = 0; i < newStartIndex; i++) {
+            // Shift audioBufferIn down
+            audioBufferIn[i] = audioBufferIn[i + length];
+        }
+        SDL_memcpy(audioBufferIn + newStartIndex, audioStreamIn, length * 2);
+    } else {
+        // Shift audioBuffers down
+        Uint32 newStartIndex = AUDIO_BUF - length / 2;
+        for (Uint32 i = 0; i < newStartIndex; i++) {
+            //audioBufferInL[i] = audioBufferInL[i + length / 2];
+            audioBufferIn[i] = audioBufferIn[i + length / 2];
+            audioBufferInR[i] = audioBufferInR[i + length / 2];
+        }
+        // Add new audioStream data
+        for (Uint32 i = 0; i < length; i += 2) {
+            audioBufferIn[newStartIndex + i / 2] = audioStreamIn[i];
+            audioBufferInR[newStartIndex + i / 2] = audioStreamIn[i + 1];
+        }
     }
-    SDL_memcpy(audioBufferIn + AUDIO_BUF - length, audioStreamIn, length * 2);
 }
 
 int main(int argc, char *argv[]) {
@@ -142,7 +162,6 @@ int main(int argc, char *argv[]) {
         const Uint32 frameStart = SDL_GetTicks();
         SDL_SetRenderDrawColor(renderer, BG.r, BG.g, BG.b, BG.a);
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, WAVE.r, WAVE.g, WAVE.g, WAVE.a);
 
         if (doMusic) {
             if (audio.length == 0 || wavLength < audio.length) {
@@ -152,6 +171,7 @@ int main(int argc, char *argv[]) {
                 audio.length = 0;
             }
             SDL_Rect progressBar = {0, HEIGHT - 5, ((double) (wavLength - audio.length) / wavLength) * LENGTH, 5};
+            SDL_SetRenderDrawColor(renderer, WAVE.r, WAVE.g, WAVE.b, WAVE.a);
             SDL_RenderFillRect(renderer, &progressBar);
         }
 
@@ -167,17 +187,45 @@ int main(int argc, char *argv[]) {
 
             // Perform reduction on whole sample
             //fftIn[sample] = reduction(fftIn[sample], sample, SAMPLING);
+            if (stereo) {
+                fftInR[sample] = (double complex) (double) audioBufferInR[sample % AUDIO_BUF] / -INT16_MIN / 2;
+                originalInR[sample] = fftInR[sample];
+                fftInR[sample] = reduction(fftInR[sample], sample % AUDIO_BUF, AUDIO_BUF);
+            }
         }
 
 #if SHOW_WAVEFORM
+        SDL_Color waveColor = stereo ? WAVE_L : WAVE;
+        float waveHeight = WAVEFORM_HEIGHT;
+        if (stereo)
+            waveHeight /= 2.;
         const double horizontalSeparator = (double) LENGTH / SHOWN_SAMPLES;
-        float prevX = 0., prevY = (float) originalIn[0] * WAVEFORM_HEIGHT + HEIGHT / 2;
+        float yOffset = stereo ? - waveHeight / 2 - 1 : 0;
+        float prevX = 0.;
+        float prevY = HEIGHT / 2 + yOffset;
+        SDL_SetRenderDrawColor(renderer, waveColor.r, waveColor.g, waveColor.b, waveColor.a);
         for (Uint32 frame = 1; frame < SHOWN_SAMPLES; frame++) {
             float thisX = (float) frame * horizontalSeparator;
-            float thisY = (float) originalIn[SAMPLING - SHOWN_SAMPLES + frame] * WAVEFORM_HEIGHT + HEIGHT / 2;
+            float thisY = (float) originalIn[SAMPLING - SHOWN_SAMPLES + frame] * waveHeight + HEIGHT / 2;
+            thisY += yOffset;
             SDL_RenderDrawLineF(renderer, prevX, prevY, thisX, thisY);
             prevX = thisX;
             prevY = thisY;
+        }
+
+        if (stereo) {
+            yOffset = stereo ? waveHeight / 2 : 0;
+            prevX = 0.;
+            prevY = HEIGHT / 2 + yOffset;
+            SDL_SetRenderDrawColor(renderer, WAVE_R.r, WAVE_R.g, WAVE_R.b, WAVE_R.a);
+            for (Uint32 frame = 1; frame < SHOWN_SAMPLES; frame++) {
+                float thisX = (float) frame * horizontalSeparator;
+                float thisY = (float) originalInR[SAMPLING - SHOWN_SAMPLES + frame] * waveHeight + HEIGHT / 2;
+                thisY += yOffset;
+                SDL_RenderDrawLineF(renderer, prevX, prevY, thisX, thisY);
+                prevX = thisX;
+                prevY = thisY;
+            }
         }
 #endif
 
@@ -185,13 +233,14 @@ int main(int argc, char *argv[]) {
         SDL_SetRenderDrawColor(renderer, BEAM.r, BEAM.g, BEAM.b, BEAM.a);
 
         fft(fftIn, fftOut, SAMPLING);
+        if (stereo)
+            fft(fftInR, fftOutR, SAMPLING);
 
         const Uint16 base = FIRST_FREQ;
         const Uint16 last = LAST_FREQ;
         // const double nextStep = (last - base) / LENGTH;  // For linear
         const double oneStep = pow((double) last / base, (double) 1 / FFT_PILLARS); // For logarithmic
         const double xInc = (double) LENGTH / FFT_PILLARS;
-        SDL_SetRenderDrawColor(renderer, BEAM.r, BEAM.g, BEAM.b, BEAM.a);
 
         // Attempt a smooth peak decay
         if (DECAY_SMOOTHING) {
@@ -202,6 +251,12 @@ int main(int argc, char *argv[]) {
                     else
                         fftOut[i] = lastFftOut[i] * DECAY_MULTIPLIER;
                 }
+                if (stereo && temperDouble(cabs(fftOutR[i])) < temperDouble(cabs(lastFftOutR[i]))) {
+                    if (DECAY_INTERPOLATE)
+                        fftOutR[i] = (lastFftOutR[i] + fftOutR[i]) / 2;
+                    else
+                        fftOutR[i] = lastFftOutR[i] * DECAY_MULTIPLIER;
+                }
             }
         }
 
@@ -211,29 +266,46 @@ int main(int argc, char *argv[]) {
                 continue;
 
             double maxSample = temperDouble(cabs(fftOut[(Uint16) workingFreq + 1]));
+            double maxSampleR = temperDouble(cabs(fftOutR[(Uint16) workingFreq + 1]));
             //Uint16 nextFreq = workingFreq + nextStep;  // Linear
             Uint16 nextFreq = workingFreq * oneStep;  // Logarithmic
             for (Uint16 f = workingFreq + 1; f < nextFreq; f++) {
                 complex double value = fftOut[f];
+                complex double valueR = fftOutR[f];
                 maxSample = maxd(maxSample, temperDouble(cabs(value)));
+                maxSampleR = maxd(maxSampleR, temperDouble(cabs(valueR)));
             }
 
-            if (maxSample <= 1) continue;
+            if (stereo && maxSampleR > 1) {
+                maxSampleR = eq(log(maxSampleR), workingFreq) * SCALER;
 
-            // Apply blanket eq to reduce bass height, then scale height
-            maxSample = eq(log(maxSample), workingFreq) * SCALER;
+                SDL_Rect rect;
+                rect.x = x;
+                rect.y = ceil(HEIGHT - maxSampleR * HEIGHT / 2) - 5;
+                rect.w = xInc;
+                rect.h = maxSampleR * HEIGHT / 2;
+                SDL_SetRenderDrawColor(renderer, BEAM_R.r, BEAM_R.g, BEAM_R.b, BEAM_R.a);
+                SDL_RenderFillRect(renderer, &rect);
+            }
+            if (maxSample > 1) {
+                // Apply blanket eq to reduce bass height, then scale height
+                maxSample = eq(log(maxSample), workingFreq) * SCALER;
 
-            SDL_Rect rect;
-            rect.x = x;
-            rect.y = ceil(HEIGHT - maxSample * HEIGHT / 2) - 5;
-            rect.w = xInc;
-            rect.h = maxSample * HEIGHT / 2;
-            SDL_RenderFillRect(renderer, &rect);
+                SDL_Rect rect;
+                rect.x = x;
+                rect.y = ceil(HEIGHT - maxSample * HEIGHT / 2) - 5;
+                rect.w = xInc;
+                rect.h = maxSample * HEIGHT / 2;
+                
+                SDL_SetRenderDrawColor(renderer, BEAM.r, BEAM.g, BEAM.b, BEAM.a);
+                SDL_RenderFillRect(renderer, &rect);
+            }
         }
 
         // Copy the current FFT to previous FFT
         for (int i = 0; i < SAMPLING; i++) {
             lastFftOut[i] = fftOut[i];
+            lastFftOutR[i] = fftOutR[i];
         }
 
     #if SHOW_STATS
@@ -284,8 +356,15 @@ int main(int argc, char *argv[]) {
 
                     audio.pos = wavBuffer;
                     audio.length = wavLength;
+                    stereo = wavSpec.channels == 2;
 
-                    // SDL_QueueAudio(deviceId, wavBuffer, wavLength);
+                    wavSpec.samples = STREAM_BUF;
+                    wavSpec.callback = (void *) AudioCallback;
+                    wavSpec.userdata = &audio;
+
+                    // Reopen device to reset sample rate
+                    SDL_CloseAudioDevice(deviceId);
+                    deviceId = SDL_OpenAudioDevice(NULL, 0, &wavSpec, NULL, 0);
 
                     isPaused = 0;
                     break;

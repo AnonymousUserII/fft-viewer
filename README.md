@@ -1,7 +1,7 @@
 # FFT Viewer
 A limited waveform and FFT viewer using the SDL2 library.
 
-It is currently hard-coded to take in 16-bit mono WAV files.
+It is currently hard-coded to take in 16-bit WAV files.
 
 ## Building
 > It requires the SDL2 library...
@@ -17,7 +17,7 @@ The executable will be at `build/fft`.
 
 ## Using
 This application will either take the input from your computer's default microphone
-or take in a WAV file (with the aforementioned restrictions).
+or take in a 16-bit WAV file.
 
 To use the microphone, pass in no arguments, i.e.
 ```sh
@@ -29,9 +29,4 @@ To use in file player mode, pass in the path to the file,
 ./fft [file_path.wav]
 ```
 When in file player mode, you can drop other WAVs onto the window to switch to them.
-
-### Note
-For some reason, the playback sample rate does not change when dragging in files.
-For the first track, sample rate will work, but will not be changed between files.
-In effect, changing from 44.1kHz to 48kHz will result in a ~8% slowdown.
 
