@@ -13,6 +13,7 @@ char doMusic;
 char stereo = 0;
 
 short audioStreamIn[STREAM_BUF * 2] = {0};
+short audioBufferOriginalIn[AUDIO_BUF] = {0};
 short audioBufferIn[AUDIO_BUF] = {0};
 short audioBufferInR[AUDIO_BUF] = {0};
 double complex originalIn[SAMPLING] = {0};
@@ -40,6 +41,7 @@ double reduction(double streamDatum, Uint32 streamDatumIndex, Uint32 streamLengt
 }
 
 double eq(double sample, Uint32 frequency) {
+    return sample;
     return sample * (1 + 0.1*(log(frequency) - log(500)));
 }
 
@@ -55,7 +57,7 @@ void AudioCallback(void *userData, Uint8 *stream, Uint32 streamLength) {
             audio->pos += length;
             audio->length -= length;
         } else {
-            SDL_memcpy(stream, audioBufferIn, length);
+            SDL_memcpy(stream, audioBufferOriginalIn, length);
         }
     }
 
@@ -68,11 +70,16 @@ void AudioCallback(void *userData, Uint8 *stream, Uint32 streamLength) {
             audioBufferIn[i] = audioBufferIn[i + length];
         }
         SDL_memcpy(audioBufferIn + newStartIndex, audioStreamIn, length * 2);
+        SDL_memcpy(audioBufferOriginalIn, audioBufferIn, AUDIO_BUF);
     } else {
+        for (Uint32 i = 0; i < AUDIO_BUF - length; i++) {
+            audioBufferOriginalIn[i] = audioBufferOriginalIn[i + length];
+        }
+        SDL_memcpy(audioBufferOriginalIn + AUDIO_BUF - length, audioStreamIn, length * 2);
+
         // Shift audioBuffers down
         Uint32 newStartIndex = AUDIO_BUF - length / 2;
         for (Uint32 i = 0; i < newStartIndex; i++) {
-            //audioBufferInL[i] = audioBufferInL[i + length / 2];
             audioBufferIn[i] = audioBufferIn[i + length / 2];
             audioBufferInR[i] = audioBufferInR[i + length / 2];
         }
@@ -238,8 +245,6 @@ int main(int argc, char *argv[]) {
 
         const Uint16 base = FIRST_FREQ;
         const Uint16 last = LAST_FREQ;
-        // const double nextStep = (last - base) / LENGTH;  // For linear
-        const double oneStep = pow((double) last / base, (double) 1 / FFT_PILLARS); // For logarithmic
         const double xInc = (double) LENGTH / FFT_PILLARS;
 
         // Attempt a smooth peak decay
@@ -260,15 +265,25 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        const double nextStep = (double) (last - base) / FFT_PILLARS;  // For linear
+        const double oneStep = pow((double) last / base, (double) 1 / FFT_PILLARS); // For logarithmic
         double workingFreq = base;
-        for (double x = 0; x < LENGTH; x += xInc, workingFreq *= oneStep) {
+        double nextFreq = base;
+        for (double x = 0; x < LENGTH; x += xInc, workingFreq = nextFreq) {
+            if (LOG_PLOT)
+                nextFreq = workingFreq * oneStep;
+            else
+                nextFreq = workingFreq + nextStep;
+
             if (workingFreq > SAMPLING / 2)
                 continue;
 
             double maxSample = temperDouble(cabs(fftOut[(Uint16) workingFreq + 1]));
             double maxSampleR = temperDouble(cabs(fftOutR[(Uint16) workingFreq + 1]));
-            //Uint16 nextFreq = workingFreq + nextStep;  // Linear
-            Uint16 nextFreq = workingFreq * oneStep;  // Logarithmic
+            Uint16 nextFreq = workingFreq + nextStep;  // Linear
+            if (LOG_PLOT) {
+                nextFreq = workingFreq * oneStep;  // Logarithmic
+            }
             for (Uint16 f = workingFreq + 1; f < nextFreq; f++) {
                 complex double value = fftOut[f];
                 complex double valueR = fftOutR[f];
