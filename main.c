@@ -116,8 +116,7 @@ int main(int argc, char *argv[]) {
 
     if (doMusic) {
         /*
-         * File must be of WAV file type, mono channel, 16-bit depth, [only tested for 44.1 kHz sample rate]
-         * i.e. CD-quality mono WAV only
+         * File must be of WAV file type, 16-bit depth
          */
         if (SDL_LoadWAV(playingFile, &wavSpec, &wavBuffer, &wavLength) == NULL) {
             fprintf(stderr, "File no load..\n");
@@ -384,10 +383,60 @@ int main(int argc, char *argv[]) {
                     isPaused = 0;
                     break;
 
+                uint newPos;
                 case SDL_KEYDOWN:
                     switch (event.key.keysym.sym) {
                         case SDLK_SPACE:
                             isPaused = !isPaused;
+                            break;
+                        case SDLK_0:
+                            audio.pos = wavBuffer;
+                            audio.length = wavLength;
+                            break;
+                        case SDLK_1:
+                            newPos = wavLength / 10;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_2:
+                            newPos = wavLength / 10 * 2;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_3:
+                            newPos = wavLength / 10 * 3;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_4:
+                            newPos = wavLength / 10 * 4;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_5:
+                            newPos = wavLength / 10 * 5;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_6:
+                            newPos = wavLength / 10 * 6;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_7:
+                            newPos = wavLength / 10 * 7;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_8:
+                            newPos = wavLength / 10 * 8;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
+                            break;
+                        case SDLK_9:
+                            newPos = wavLength / 10 * 9;
+                            audio.pos = wavBuffer + newPos;
+                            audio.length = wavLength - newPos;
                             break;
                         case SDLK_h:
                             if (!doMusic) break;

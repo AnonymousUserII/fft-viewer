@@ -41,7 +41,7 @@
 #define FIRST_FREQ 20
 #define LAST_FREQ 20000
 // Should the frequency of the FFT plot be logarithmically graphed
-#define LOG_PLOT 0
+#define LOG_PLOT 1
 
 // If peak decay should be enabled
 #define DECAY_SMOOTHING 1
