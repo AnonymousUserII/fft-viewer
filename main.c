@@ -11,6 +11,7 @@
 char holdAudioStream = 0;
 char doMusic;
 char stereo = 0;
+double volume = 1.;
 
 short audioStreamIn[STREAM_BUF * 2] = {0};
 short audioBufferOriginalIn[AUDIO_BUF] = {0};
@@ -37,7 +38,7 @@ double reduction(double streamDatum, Uint32 streamDatumIndex, Uint32 streamLengt
     Uint32 half = streamLength / 2;
     double cos_coeff = M_PI * (streamDatumIndex - half) / streamLength;
     double value = streamDatum * cos(cos_coeff) * cos(cos_coeff);
-    return value;
+    return value * volume;
 }
 
 double eq(double sample, Uint32 frequency) {
@@ -54,6 +55,11 @@ void AudioCallback(void *userData, Uint8 *stream, Uint32 streamLength) {
         if (!holdAudioStream) {
             length = min(streamLength, audio->length);
             SDL_memcpy(stream, audio->pos, length);
+            for (Uint32 i = 0; i < length; i++) {
+                char value = (char) stream[i];
+                value *= volume;
+                stream[i] = (Uint8) value;
+            }
             audio->pos += length;
             audio->length -= length;
         } else {
@@ -460,6 +466,12 @@ int main(int argc, char *argv[]) {
                             if (!doMusic) break;
                             audio.pos += wavSpec.freq * 2 * 5;
                             audio.length -= wavSpec.freq * 2 * 5;
+                            break;
+                        case SDLK_UP:
+                            volume = mind(1, volume + 0.05);
+                            break;
+                        case SDLK_DOWN:
+                            volume = maxd(0, volume - 0.05);
                             break;
                         default:
                             break;
